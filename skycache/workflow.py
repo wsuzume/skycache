@@ -6,20 +6,26 @@ import uuid
 
 from typing import Iterable, Optional
 
-from .checkpoint import Context, Input, CheckPoint
+from .checkpoint import Input
+from .utils import get_unique_name
 
 class Workflow:
     def __init__(self, root_dir: Path, db_path: Optional[Path]=None):
         self.root_dir = Path(root_dir)
-        self.name = uuid.uuid4()
+        self.name = get_unique_name()
 
         self._db_path = None if db_path is None else Path(db_path)
 
-        # Never substitude again to the database
+        # Never substitude again to this attribute
         # We are using this as a pointer
-        self.database = self.load_database()
+        self._database = SQLite3(db_path=self.db_path)
 
         self._context = {}
+
+    @property
+    def database(self):
+        # read only property
+        return self._database
     
     def __repr__(self):
         return f"Workflow({self.name})"
@@ -33,26 +39,12 @@ class Workflow:
     def use(self, *args):
         kwargs = { k: self._context[k] for k in args }
         return Context(self.name, self.database, **kwargs)
-
+    
     @property
     def db_path(self):
         if self._db_path is None:
-            return self.root_dir / "database.csv"
+            return self.root_dir / ".skycache" / "database.db"
         return self._db_path
-    
-    def load_database(self):
-        if not self.db_path.exists():
-            return pd.DataFrame()
-        return pd.read_csv(self.db_path, index_col=0)
-
-    def update_database(self):
-        record = self.get_input_hash_record()
-        for col in record.index:
-            self.database.loc[self.name, col] = record[col]
-        return self.database
-    
-    def save_database(self):
-        self.database.to_csv(self.db_path)
 
     @property
     def inputs(self):
@@ -61,3 +53,7 @@ class Workflow:
     def get_input_hash_record(self):
         record = { k: ipt.hash() for k, ipt in self.inputs.items()}
         return pd.Series(record, name=self.name)
+
+    def compile(self, dest_dir: Path=None):
+        dest_dir = dest_dir
+        return

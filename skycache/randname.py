@@ -846,16 +846,22 @@ import random
 # GetRandomName generates a random name from the list of adjectives and surnames in this package
 # formatted as "adjective_surname". For example 'focused_turing'. If retry is non-zero, a random
 # integer between 0 and 10 will be added to the end of the name, e.g `focused_turing3`
-def get_random_name_original(retry: int=0) -> str:
+def get_random_name(retry: int=0) -> str:
     """
     Python transcript of Docker's original GetRandomName.
     """
+
+    # initialize seed with time
+    random.seed()
+    
     while True:
-    	name = left[random.randrange(len(left))] + "_" + right[random.randrange(len(right))]
-    	if name == "boring_wozniak": # Steve Wozniak is not boring
+        name = left[random.randrange(len(left))] + "_" + right[random.randrange(len(right))]
+        if name == "boring_wozniak": # Steve Wozniak is not boring
             continue
 
-    	if retry > 0:
-    		name += str(random.randrange(10))
+        if retry > 0:
+        	name += str(random.randrange(10))
+
+        break
             
-    	return name
+    return name
