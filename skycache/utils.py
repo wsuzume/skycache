@@ -89,7 +89,7 @@ def get_unique_name(dateformat=None) -> str:
     now = datetime.now()
 
     if dateformat is None:
-        date = (lambda x: x.strftime('%Y%m%d_%H%M%S%f'))(now)
+        date = (lambda x: x.strftime('%Y%m%d-%H%M%S%f'))(now)
     elif isinstance(dateformat, str):
         date = now.strftime(dateformat)
     elif isinstance(dateformat, Callable):
@@ -97,7 +97,7 @@ def get_unique_name(dateformat=None) -> str:
     else:
         raise TypeError("dateformat must be instance of str or Callable[[datetime.datetime], str].")
         
-    return '-'.join([ date, get_random_name(0), str(uuid.uuid4()).split('-')[0] ])
+    return '_'.join([ date, get_random_name(0), str(uuid.uuid4()).split('-')[0] ])
 
 def timestamp_from_unique_name(tag):
-    return datetime.strptime(tag.split('-')[0], '%Y%m%d_%H%M%S%f').timestamp()
+    return datetime.strptime(tag.split('_')[0], '%Y%m%d-%H%M%S%f').timestamp()

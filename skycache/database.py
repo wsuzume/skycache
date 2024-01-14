@@ -53,78 +53,14 @@ def get_column_info(db_path: Path, table_name: str):
     
     return column_info
 
-### recent
-def create_table_recent(db_path: Path, table_name: str):
+### history
+def create_table(db_path: Path, table_name: str):
     try:
         conn = sqlite3.connect(str(db_path))
         cur = conn.cursor()
         
         # group が sqlite3 の予約語なので `` で囲んでエスケープしている。
         query = f"""CREATE TABLE IF NOT EXISTS {table_name} (
-            `path` TEXT,
-            `key` TEXT,
-            `tag` TEXT,
-            `refer` TEXT,
-            `group` TEXT,
-            `prefix` TEXT,
-            `hash` TEXT,
-            `time` REAL,
-            `mtime` REAL,
-            UNIQUE(path, key)
-        )
-        """
-        
-        cur.execute(query)
-    finally:
-        conn.close()
-
-def insert_or_replace_into_recent(db_path: Path, table_name: str, data):
-    try:
-        conn = sqlite3.connect(str(db_path))
-        cur = conn.cursor()
-        
-        query = f"INSERT OR REPLACE INTO `{table_name}` VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        
-        cur.executemany(query, data)
-        conn.commit()
-    finally:
-        conn.close()
-
-def read_table_recent(db_path: Path, table_name: str):
-    try:
-        conn = sqlite3.connect(str(db_path))
-        
-        query = f"SELECT * FROM `{table_name}`"
-        
-        df = pd.read_sql_query(query, conn)
-    finally:
-        conn.close()
-
-    return df
-
-def read_table_recent_select(db_path: Path, table_name: str, managed_files: List[ManagedFile]):
-    def to_query(managed_files):
-        return ", ".join([f"('{mf.path}', '{mf.key}')" for mf in managed_files ])
-        
-    try:
-        conn = sqlite3.connect(str(db_path))
-        
-        query = f"SELECT * FROM `{table_name}` WHERE (`path`, `key`) IN ({to_query(managed_files)})"
-        
-        df = pd.read_sql_query(query, conn)
-    finally:
-        conn.close()
-
-    return df
-
-### history
-def create_table_history(db_path: Path, table_name: str):
-    try:
-        conn = sqlite3.connect(str(db_path))
-        cur = conn.cursor()
-        
-        # group が sqlite3 の予約語なので `` で囲んでエスケープしている。
-        query = f"""CREATE TABLE IF NOT EXISTS history_{table_name} (
             `path` TEXT,
             `key` TEXT,
             `tag` TEXT,
@@ -142,23 +78,23 @@ def create_table_history(db_path: Path, table_name: str):
     finally:
         conn.close()
 
-def insert_or_replace_into_history(db_path: Path, table_name: str, data):
+def insert_or_replace_into_hash_table(db_path: Path, table_name: str, data):
     try:
         conn = sqlite3.connect(str(db_path))
         cur = conn.cursor()
         
-        query = f"INSERT OR REPLACE INTO `history_{table_name}` VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        query = f"INSERT OR REPLACE INTO `{table_name}` VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)"
         
         cur.executemany(query, data)
         conn.commit()
     finally:
         conn.close()
 
-def read_table_history(db_path: Path, table_name: str):
+def read_table(db_path: Path, table_name: str):
     try:
         conn = sqlite3.connect(str(db_path))
         
-        query = f"SELECT * FROM `history_{table_name}`"
+        query = f"SELECT * FROM `{table_name}`"
         
         df = pd.read_sql_query(query, conn)
     finally:
@@ -166,14 +102,14 @@ def read_table_history(db_path: Path, table_name: str):
 
     return df
 
-def read_table_history_select(db_path: Path, table_name: str, managed_files: List[ManagedFile]):
+def read_table_select(db_path: Path, table_name: str, managed_files: List[ManagedFile]):
     def to_query(managed_files):
         return ", ".join([f"('{mf.path}', '{mf.key}')" for mf in managed_files ])
         
     try:
         conn = sqlite3.connect(str(db_path))
         
-        query = f"SELECT * FROM `history_{table_name}` WHERE (`path`, `key`) IN ({to_query(managed_files)})"
+        query = f"SELECT * FROM `{table_name}` WHERE (`path`, `key`) IN ({to_query(managed_files)})"
         
         df = pd.read_sql_query(query, conn)
     finally:
@@ -198,7 +134,7 @@ def search_history(db_path: Path, table_name: str, df: pd.DataFrame, mode: str="
         select_query = f"""
             SELECT H.*
             FROM (
-                SELECT A.* FROM `history_{table_name}` A INNER JOIN current B ON A.path = B.path AND A.key = B.key
+                SELECT A.* FROM `{table_name}` A INNER JOIN current B ON A.path = B.path AND A.key = B.key
             ) H JOIN current C ON {cond}
         """
     elif mode == "recent":
@@ -207,7 +143,7 @@ def search_history(db_path: Path, table_name: str, df: pd.DataFrame, mode: str="
                 SELECT H.*,
                     ROW_NUMBER() OVER (PARTITION BY H.path ORDER BY H.time DESC) rn
                 FROM (
-                    SELECT A.* FROM `history_{table_name}` A INNER JOIN current B ON A.path = B.path AND A.key = B.key
+                    SELECT A.* FROM `{table_name}` A INNER JOIN current B ON A.path = B.path AND A.key = B.key
                 ) H JOIN current C ON {cond}
             )
             SELECT `path`, `key`, `tag`, `refer`, `group`, `prefix`, `hash`, `time`, `mtime` FROM T WHERE rn = 1

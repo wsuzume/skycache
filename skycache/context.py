@@ -9,22 +9,10 @@ from tqdm.auto import tqdm
 
 from typing import List, Iterable, Mapping, Union
 
+from .frozen import FrozenContext
 from .managed import ManagedFile, ManagedDirectory
 from .snapshot import Snapshot
-
-class FrozenFile:
-    """
-    どこにキャッシュされているかまで判明しているファイル。
-    """
-    def __init__(self, path, cache_root_dir, tag):
-        pass
-
-class FrozenContext:
-    """
-    どのファイルを使用するかまで判明しているコンテキスト。
-    """
-    def __init__(self):
-        pass
+from .utils import get_unique_name
 
 class Resource:
     """管理対象としたいファイルとディレクトリに対する様々な操作を提供する。
@@ -100,7 +88,7 @@ class Resource:
         path = Path(path)
         
         if (not path.is_file()) and (not path.is_dir()):
-            raise FileNotFoundError(f"path is not file nor directory.")
+            raise FileNotFoundError(f"path is not file nor directory: '{path}'.")
 
         if path.is_file():
             self.table[key] = ManagedFile(path=path, key=key, group=group)
@@ -315,3 +303,27 @@ class Resource:
             コピーの進捗状況を表示するかどうか。(by default False)
         """
         return self.snapshot().copy(dest_dir=dest_dir, verbose=verbose)
+
+    def cache_incriments(self, db_path: Path, cache_root_dir: Path, verbose=False):
+        tag = get_unique_name()
+
+        snap = self.snapshot()
+        df, idx = snap.cache_increments(
+            db_path=db_path,
+            cache_root_dir=cache_root_dir,
+            tag=tag,
+            update=True,
+            verbose=verbose,
+            return_index=True
+        )
+
+        return df, idx
+    
+    def freeze(self, db_path: Path, cache_root_dir: Path, verbose=False):
+        df, idx = self.cache_incriments(
+            db_path=db_path,
+            cache_root_dir=cache_root_dir,
+            verbose=verbose
+        )
+
+        return FrozenContext(df, cache_root_dir=cache_root_dir, inc_idx=idx)

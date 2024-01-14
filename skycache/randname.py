@@ -855,8 +855,8 @@ def get_random_name(retry: int=0) -> str:
     random.seed()
     
     while True:
-        name = left[random.randrange(len(left))] + "_" + right[random.randrange(len(right))]
-        if name == "boring_wozniak": # Steve Wozniak is not boring
+        name = left[random.randrange(len(left))] + "-" + right[random.randrange(len(right))]
+        if name == "boring-wozniak": # Steve Wozniak is not boring
             continue
 
         if retry > 0:

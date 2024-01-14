@@ -12,10 +12,9 @@ from typing import Callable, List
 from .managed import ManagedFile
 from .utils import timestamp_from_unique_name
 from .database import \
-    is_table_exists, drop_table, create_table_recent, read_table_recent, read_table_recent_select, \
-    insert_or_replace_into_recent, \
-    create_table_history, read_table_history, read_table_history_select, \
-    insert_or_replace_into_history, search_history
+    is_table_exists, drop_table, \
+    create_table, read_table, read_table_select, \
+    insert_or_replace_into_hash_table, search_history
 
 class SnapshotTableKey:
     def __init__(self, key=None, prefix=None, path=None):
@@ -120,11 +119,6 @@ class Snapshot:
     Snapshot はキャッシュを作成する際に hash や mtime のアップデートが実施される。
     それでも Snapshot のバックアップ中にファイルを編集するとズレが起こる可能性があるので、
     Snapshot の管理対象となるファイルをバックアップ中に編集してはならない。
-
-    sqlite3 に記録される情報には recent と history の２種類のテーブルがあり、
-    最後のキャッシュ結果が recent に、過去のすべてのキャッシュ履歴が history に記録される。
-    recent に相当するテーブル名は Snapshot の name に対応し、
-    history に相当するテーブル名は history_[name] に対応する。
     """
     def __init__(self, name: str, files:List[ManagedFile], init_hash=False, init_mtime=False):
         self._name = name
@@ -211,19 +205,8 @@ class Snapshot:
             コピーの進捗状況を表示する。(by default False)
         """
         self._copy(dest_dir=dest_dir, path_list=self.path_list, verbose=verbose)
-
-    def drop_recent_hash_table(self, db_path: Path):
-        """直近のキャッシュ情報が記録されたテーブルを削除する。
-
-        Parameters
-        ----------
-        db_path : Path
-            テーブルを保存しているデータベースファイルのパス。
-        """
-        if is_table_exists(db_path, self.name):
-            drop_table(db_path, table_name=self.name)
     
-    def drop_history_hash_table(self, db_path: Path):
+    def drop_hash_table(self, db_path: Path):
         """過去のすべてのキャッシュ情報が記録されたテーブルを削除する。
 
         Parameters
@@ -232,31 +215,9 @@ class Snapshot:
             テーブルを保存しているデータベースファイルのパス。
         """
         if is_table_exists(db_path, self.name):
-            drop_table(db_path, table_name=f"history_{self.name}")
+            drop_table(db_path, table_name=f"{self.name}")
 
-    def read_recent_hash_table(self, db_path: Path, select: bool=True) -> pd.DataFrame:
-        """直近のキャッシュ情報が記録されたテーブルを読み取る。
-
-        Parameters
-        ----------
-        db_path : Path
-            テーブルを保存しているデータベースファイルのパス。
-        select : bool, optional
-            管理対象のファイルに関連する情報のみを読み取る。(by default True)
-
-        Returns
-        -------
-        pd.DataFrame
-            直近のキャッシュ情報。
-        """
-        if not is_table_exists(db_path, self.name):
-            create_table_recent(db_path, self.name)
-
-        if not select:
-            return read_table_recent(db_path, self.name)
-        return read_table_recent_select(db_path, self.name, self.managed_files)
-
-    def read_history_hash_table(self, db_path: Path, select: bool=True) -> pd.DataFrame:
+    def read_hash_table(self, db_path: Path, select: bool=True) -> pd.DataFrame:
         """過去のすべてのキャッシュ情報が記録されたテーブルを読み取る。
 
         Parameters
@@ -271,12 +232,12 @@ class Snapshot:
         pd.DataFrame
             過去のすべてのキャッシュ情報。
         """
-        if not is_table_exists(db_path, f"history_{self.name}"):
-            create_table_history(db_path, self.name)
+        if not is_table_exists(db_path, f"{self.name}"):
+            create_table(db_path, self.name)
         
         if not select:
-            return read_table_history(db_path, self.name)
-        return read_table_history_select(db_path, self.name, self.managed_files)
+            return read_table(db_path, self.name)
+        return read_table_select(db_path, self.name, self.managed_files)
     
     @staticmethod
     def _parse_tag_and_timestamp(tag, timestamp):
@@ -335,10 +296,10 @@ class Snapshot:
     def _insert_or_replace_into_hash_table(self, db_path: Path, df: pd.DataFrame):
         data = [ row[1:] for row in df.itertuples() ]
         
-        if not is_table_exists(db_path, f"history_{self.name}"):
-            create_table_history(db_path, self.name)
+        if not is_table_exists(db_path, f"{self.name}"):
+            create_table(db_path, self.name)
             
-        insert_or_replace_into_history(db_path, self.name, data)
+        insert_or_replace_into_hash_table(db_path, self.name, data)
     
     @staticmethod
     def _table_from_dataframe(df: pd.DataFrame):
@@ -376,7 +337,7 @@ class Snapshot:
             raise ValueError(f"cannot be specified at the same time: db_path and df_prev.")
 
         if db_path is not None:
-            df_prev = self.read_recent_hash_table(db_path)
+            df_prev = self.search_history(db_path)
         
         # TODO: キャッシュされている場合にキャッシュのパスで上書きする。
         table_prev = self._table_from_dataframe(df_prev)
@@ -425,15 +386,21 @@ class Snapshot:
         df_current = self.as_hash_table(tag=tag, timestamp=timestamp, refer_self=True, update_hash=False, update_mtime=False)
         df_history = self.search_history(db_path, mode=mode, aware=aware, update_hash=False, update_mtime=False)
 
-        df_refer = df_history[["path", "key", "prefix", "refer"]]
-        df_refer.columns = ["path", "key", "prefix", "refer_history"]
+        df_refer = df_history[["path", "key", "prefix", "tag", "refer", "group"]]
+        df_refer.columns = ["path", "key", "prefix", "tag_history", "refer_history", "group_history"]
         
         df = pd.merge(df_current, df_refer, how="left", on=["path", "key", "prefix"])
 
-        idx = df['refer_history'].isna()
+        # path, key, prefix はユニークキーとして結合しているので考慮済み。
+        # 過去にキャッシュされた参照先がないか、グループ割り当てが変わった。
+        idx = df['refer_history'].isna() | (df['group'] != df['group_history'])
 
         # 変更日時とハッシュが同じファイルが保存されていれば参照先を置き換え
         df.loc[~idx, 'refer'] = df.loc[~idx, 'refer_history']
+
+        # 増分がないならタグは過去のもので置き換えてよい
+        if idx.sum() == 0 and len(df['tag_history'].value_counts()) == 1:
+            df['tag'] = df['tag_history']
 
         df = df[df_current.columns].copy()
 
@@ -469,7 +436,9 @@ class Snapshot:
                          timestamp=None,
                          mode="recent",
                          aware="both",
-                         update: bool=False):
+                         update: bool=False,
+                         verbose: bool=False,
+                         return_index=False):
         dest_dir = Path(cache_root_dir) / tag
         
         df_inc, idx = self.calc_incremental_difference(
@@ -485,23 +454,27 @@ class Snapshot:
         df = df_inc[idx]
 
         if len(df) == 0:
+            if return_index:
+                return df_inc, idx
             return df
 
-        self._copy(dest_dir=dest_dir, path_list=list(map(Path, df['path'])), verbose=False)
+        self._copy(dest_dir=dest_dir, path_list=list(map(Path, df['path'])), verbose=verbose)
         self._insert_or_replace_into_hash_table(db_path=db_path, df=df_inc)
         
+        if return_index:
+            return df_inc, idx
         return df
     
-    def save(self, db_path: Path, cache_root_dir: Path, tag: str, timestamp=None):
-        save_dir = Path(cache_root_dir) / tag
-        if len(save_dir.parts) == 0:
-            raise ValueError("current directory is not allowed for save_dir.")
+    # def save(self, db_path: Path, cache_root_dir: Path, tag: str, timestamp=None):
+    #     save_dir = Path(cache_root_dir) / tag
+    #     if len(save_dir.parts) == 0:
+    #         raise ValueError("current directory is not allowed for save_dir.")
         
-        for path in self.path_list:
-            save_path = save_dir / path
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, save_path)
+    #     for path in self.path_list:
+    #         save_path = save_dir / path
+    #         save_path.parent.mkdir(parents=True, exist_ok=True)
+    #         shutil.copy2(path, save_path)
 
-    def update(self, db_path: Path, cache_root_dir: Path, tag: str, timestamp=None):
-        self.save(db_path, cache_root_dir, tag, timestamp)
-        self.overwrite_recent_hash_table(db_path, tag=tag, timestamp=timestamp, update=True)
+    # def update(self, db_path: Path, cache_root_dir: Path, tag: str, timestamp=None):
+    #     self.save(db_path, cache_root_dir, tag, timestamp)
+    #     self.overwrite_recent_hash_table(db_path, tag=tag, timestamp=timestamp, update=True)
