@@ -5,11 +5,11 @@ from datetime import datetime
 from pathlib import Path
 from io import StringIO
 
-from typing import Callable, Iterable, List, Optional
+from typing import Callable, Iterable, List, Optional, Set
 
 from .randname import get_random_name
 
-def ignore_path(ps: Iterable[Path], rule: set[str]) -> List[Path]:
+def ignore_path(ps: Iterable[Path], rule: Set[str]) -> List[Path]:
     return [ p for p in ps if len(rule & set(p.parts)) == 0 ]
 
 def ignore_python_cache(ps: Iterable[Path]) -> List[Path]:

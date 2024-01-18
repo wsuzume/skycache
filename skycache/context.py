@@ -304,7 +304,7 @@ class Resource:
         """
         return self.snapshot().copy(dest_dir=dest_dir, verbose=verbose)
 
-    def cache_incriments(self, db_path: Path, cache_root_dir: Path, verbose=False):
+    def cache_increments(self, db_path: Path, cache_root_dir: Path, verbose=False):
         tag = get_unique_name()
 
         snap = self.snapshot()
@@ -320,7 +320,7 @@ class Resource:
         return df, idx
     
     def freeze(self, db_path: Path, cache_root_dir: Path, verbose=False):
-        df, idx = self.cache_incriments(
+        df, idx = self.cache_increments(
             db_path=db_path,
             cache_root_dir=cache_root_dir,
             verbose=verbose
